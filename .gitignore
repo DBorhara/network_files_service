@@ -1,0 +1,12 @@
+# Ignore everything
+*
+
+# Except directories, source files, and build configs
+!*/
+!*.c
+!*.h
+!Makefile
+!README.txt
+!AUTHOR
+!.gitignore
+
