@@ -99,26 +99,15 @@ int main(int argc, char *argv[]) {
   printf("Client connected.\n");
   // Buffer for read/write
   char buffer[1024];
-  // read incoming client bytes to buffer
-  ssize_t bytes_received = read(client_fd, buffer, sizeof(buffer));
-  if (bytes_received == -1) {
-    perror("read");
-    close(client_fd);
-    close(serv_fd);
-    exit(EXIT_FAILURE);
-  }
-  // If not more incoming bytes from read, close connection
-  if (bytes_received == 0) {
-    printf("Client disconnected.\n");
-    // else list number of incoming bytes from read
-  } else {
+  ssize_t bytes_received;
+  // while still getting bytes from read
+  while ((bytes_received = read(client_fd, buffer, sizeof(buffer))) > 0) {
+    // list number of incoming bytes from this read
     printf("Received %zd bytes.\n", bytes_received);
-
-    // Total number of bytes sent via write
+    // Total number of bytes sent via this write
     ssize_t total_sent = 0;
-    // write bytes back until total sent equals received bytes
+    // Send back buffer conents to client via write
     while (total_sent < bytes_received) {
-      // write bytes back to client from buffer
       ssize_t sent = write(client_fd, buffer + total_sent,
                            (size_t)(bytes_received - total_sent));
       if (sent == 0) {
@@ -128,14 +117,21 @@ int main(int argc, char *argv[]) {
           // No more to write back to client this
           fprintf(stderr, "write returned zero\n.");
         }
-        // cleqn up
         close(client_fd);
         close(serv_fd);
         exit(EXIT_FAILURE);
       }
+      // Update total sent bytes to client with current sent from this iteration
       total_sent += sent;
     }
   }
+  if (bytes_received == -1) {
+    perror("read");
+    close(client_fd);
+    close(serv_fd);
+    exit(EXIT_FAILURE);
+  }
+  printf("Client has disconnected from server.\n");
   close(client_fd);
   close(serv_fd);
 
