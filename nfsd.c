@@ -1,4 +1,4 @@
-#include <stddef.h>
+#include <string.h>
 #define _POSIX_C_SOURCE 200809L
 
 #include "nfsd.h"
@@ -97,43 +97,56 @@ int main(int argc, char *argv[]) {
   }
 
   printf("Client connected.\n");
-  // Buffer for read/write
-  char buffer[1024];
-  ssize_t bytes_received;
-  // while still getting bytes from read
-  while ((bytes_received = read(client_fd, buffer, sizeof(buffer))) > 0) {
-    // list number of incoming bytes from this read
-    printf("Received %zd bytes.\n", bytes_received);
-    // Total number of bytes sent via this write
-    ssize_t total_sent = 0;
-    // Send back buffer conents to client via write
-    while (total_sent < bytes_received) {
-      ssize_t sent = write(client_fd, buffer + total_sent,
-                           (size_t)(bytes_received - total_sent));
-      if (sent == 0) {
-        if (sent < 0) {
-          perror("write");
-        } else {
-          // No more to write back to client this
-          fprintf(stderr, "write returned zero\n.");
-        }
-        close(client_fd);
-        close(serv_fd);
-        exit(EXIT_FAILURE);
+  char buffer[1024]; // Buffer for read/write
+  size_t used = 0;   // stores number of processed bytes from buffer
+  while (1) {
+    // read bytes from client
+    ssize_t bytes_received =
+        read(client_fd, buffer + used, sizeof(buffer) - used);
+    if (bytes_received == -1) {
+      if (errno == EINTR) {
+        continue;
       }
-      // Update total sent bytes to client with current sent from this iteration
-      total_sent += sent;
+      perror("read");
+      break;
+    }
+    if (bytes_received == 0) {
+      printf("Client disconnected\n");
+      break;
+    }
+
+    // increment how many by number of bytes read
+    used += (size_t)bytes_received;
+    // Process complete messages and updates used to number of remaning bytes
+    if (parse_messages(buffer, &used) == -1) {
+      break;
     }
   }
-  if (bytes_received == -1) {
-    perror("read");
-    close(client_fd);
-    close(serv_fd);
-    exit(EXIT_FAILURE);
+  if (used > 0) {
+    fprintf(stderr, "Connection terminated with incomplete data\n");
   }
-  printf("Client has disconnected from server.\n");
   close(client_fd);
   close(serv_fd);
-
   return EXIT_SUCCESS;
+}
+
+// buffer: bytes received, length: number of valid bytes in buffer
+// First iteration is checking "LI|"
+int parse_messages(char *buffer, size_t *length) {
+  size_t offset = 0;              // Track position in buffer
+  while (*length - offset >= 3) { // check  if enough space in buffer
+    if (memcmp(buffer + offset, "LI|", 3) !=
+        0) { // bytes + offset != bytes of "LI|"
+      fprintf(stderr, "Unsupported message type\n");
+      return -1;
+    }
+
+    printf("Parsed LIST request\n");
+    offset += 3; // Move up to next unread byte after "|"
+  }
+  // Use memove to move reamining bytes up in the buffer and preserve those
+  // bytes for next read() call
+  memmove(buffer, buffer + offset, *length - offset);
+  *length -= offset;
+  return 0;
 }
